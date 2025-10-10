@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model SistemaUser {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  nombre    String
+  role      String   @default("operador")
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sistema_users")
+}
+
+model Empleado {
+  id            String   @id @default(cuid())
+  dni           String   @unique
+  nombre        String
+  apellido      String
+  departamento  String
+  puesto        String
+  tipoHorario   String   @default("administrativo")
+  fechaIngreso  DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  asistencias Asistencia[]
+  papeletas   Papeleta[]
+
+  @@map("empleados")
+}
+
+model Asistencia {
+  id           String   @id @default(cuid())
+  empleadoId   String
+  fecha        DateTime
+  horaEntrada  String
+  horaSalida   String?
+  fotoEntrada  String?
+  fotoSalida   String?
+  tardanza     Boolean  @default(false)
+  faltante     Boolean  @default(false)
+  estado       String   @default("presente")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@map("asistencias")
+}
+
+model Papeleta {
+  id         String   @id @default(cuid())
+  empleadoId String
+  fecha      DateTime
+  tipo       String
+  motivo     String
+  aprobado   Boolean  @default(false)
+  horas      Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@map("papeletas")
+}
