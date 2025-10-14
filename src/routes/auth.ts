@@ -42,7 +42,7 @@ const createDefaultSystemUsers = async () => {
       console.log('✅ Usuario admin creado: admin/admin123')
     }
 
-    // Empleado de ejemplo
+    // Empleado de ejemplo - CORREGIDO con tipoHorario
     const existingEmpleado = await prisma.empleado.findFirst({ 
       where: { dni: '12345678' } 
     })
@@ -54,10 +54,39 @@ const createDefaultSystemUsers = async () => {
           apellido: 'Rodríguez',
           departamento: 'TI',
           puesto: 'Desarrollador',
+          tipoHorario: 'CAS', // ← AGREGAR ESTE CAMPO
           fechaIngreso: new Date('2023-01-15')
         }
       })
       console.log('✅ Empleado ejemplo creado: 12345678')
+    }
+
+    // Crear configuraciones de horario por defecto si no existen
+    const existingHorarios = await prisma.configHorario.findMany()
+    if (existingHorarios.length === 0) {
+      await prisma.configHorario.createMany({
+        data: [
+          {
+            nombre: 'CAS',
+            descripcion: 'Contrato Administrativo de Servicios',
+            entradaManana: '08:00',
+            salidaManana: '13:00',
+            entradaTarde: '15:00',
+            salidaTarde: '18:00',
+            tolerancia: 15
+          },
+          {
+            nombre: 'Practicante CAS',
+            descripcion: 'Practicante con contrato CAS',
+            entradaManana: '08:00',
+            salidaManana: '13:00',
+            entradaTarde: '15:00',
+            salidaTarde: '18:00',
+            tolerancia: 15
+          }
+        ]
+      })
+      console.log('✅ Configuraciones de horario por defecto creadas')
     }
 
   } catch (error) {
