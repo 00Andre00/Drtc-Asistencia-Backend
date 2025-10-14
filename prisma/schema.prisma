@@ -20,6 +20,22 @@ model SistemaUser {
   @@map("sistema_users")
 }
 
+model ConfigHorario {
+  id          String   @id @default(cuid())
+  nombre      String   @unique  // "CAS", "Practicante CAS", etc.
+  descripcion String?
+  entradaManana String
+  salidaManana  String
+  entradaTarde  String?
+  salidaTarde   String? 
+  tolerancia    Int      @default(15) // minutos
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("config_horarios")
+}
+
 model Empleado {
   id            String   @id @default(cuid())
   dni           String   @unique
@@ -27,7 +43,7 @@ model Empleado {
   apellido      String
   departamento  String
   puesto        String
-  tipoHorario   String   @default("administrativo")
+  tipoHorario   String 
   fechaIngreso  DateTime
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
