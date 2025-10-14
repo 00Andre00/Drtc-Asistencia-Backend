@@ -8,6 +8,8 @@ import path from 'path'
 import authRoutes from './routes/auth'
 import asistenciaRoutes from './routes/asistencia'
 import adminRoutes from './routes/admin'
+import configHorariosRoutes from './routes/config-horarios'
+
 
 dotenv.config()
 
@@ -28,6 +30,8 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
 app.use('/api/auth', authRoutes)
 app.use('/api/asistencia', asistenciaRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/config-horarios', configHorariosRoutes)
+
 
 // Health check
 app.get('/api/health', (req, res) => {
