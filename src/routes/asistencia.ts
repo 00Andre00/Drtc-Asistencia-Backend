@@ -64,27 +64,124 @@ const buscarEmpleado = async (dni: string) => {
   return empleado
 }
 
-// Determinar tardanza basado en tipo de horario
-const determinarTardanza = (horaEntrada: Date, tipoHorario: string): boolean => {
+// Obtener configuración de horario
+const obtenerConfigHorario = async (tipoHorario: string) => {
+  try {
+    const config = await prisma.configHorario.findUnique({
+      where: { nombre: tipoHorario }
+    })
+
+    if (!config) {
+      // Si no encuentra la configuración, usar valores por defecto para CAS
+      return {
+        entradaManana: '08:00',
+        salidaManana: '13:00',
+        entradaTarde: '15:00',
+        salidaTarde: '18:00',
+        tolerancia: 15
+      }
+    }
+
+    return config
+  } catch (error) {
+    console.error('Error obteniendo configuración de horario:', error)
+    // Valores por defecto en caso de error
+    return {
+      entradaManana: '08:00',
+      salidaManana: '13:00',
+      entradaTarde: '15:00',
+      salidaTarde: '18:00',
+      tolerancia: 15
+    }
+  }
+}
+
+// Determinar tardanza basado en configuración de horario
+const determinarTardanza = async (horaEntrada: Date, tipoHorario: string): Promise<{ esTardanza: boolean; mensaje: string }> => {
+  const config = await obtenerConfigHorario(tipoHorario)
+  
   const hora = horaEntrada.getHours()
   const minutos = horaEntrada.getMinutes()
-  
-  // Límites de tardanza por tipo de horario
-  const limites = {
-    matutino: { hora: 7, minutos: 15 }, // 7:15 AM
-    vespertino: { hora: 15, minutos: 15 }, // 3:15 PM
-    nocturno: { hora: 23, minutos: 15 }, // 11:15 PM
-    administrativo: { hora: 8, minutos: 15 }, // 8:15 AM
-    flexible: { hora: 6, minutos: 15 } // 6:15 AM
+  const horaCompleta = hora * 60 + minutos
+
+  // Convertir horarios de configuración a minutos
+  const [horaEntradaManana, minutoEntradaManana] = config.entradaManana.split(':').map(Number)
+  const limiteManana = horaEntradaManana * 60 + minutoEntradaManana + config.tolerancia
+
+  // Verificar si es tardanza en la mañana
+  if (horaCompleta > limiteManana) {
+    // Verificar si todavía está en horario de mañana (antes del horario de tarde)
+    let limiteMaximoManana = 13 * 60 + 59 // 13:59 como máximo para mañana
+    
+    if (config.entradaTarde) {
+      const [horaEntradaTarde] = config.entradaTarde.split(':').map(Number)
+      limiteMaximoManana = horaEntradaTarde * 60 - 1 // Un minuto antes del horario de tarde
+    }
+
+    if (horaCompleta <= limiteMaximoManana) {
+      return { 
+        esTardanza: true, 
+        mensaje: `Tardanza en horario de mañana. Límite: ${config.entradaManana} + ${config.tolerancia}min` 
+      }
+    }
   }
 
-  const limite = limites[tipoHorario as keyof typeof limites] || limites.administrativo
+  // Si tiene horario de tarde, verificar tardanza en la tarde
+  if (config.entradaTarde) {
+    const [horaEntradaTarde, minutoEntradaTarde] = config.entradaTarde.split(':').map(Number)
+    const limiteTarde = horaEntradaTarde * 60 + minutoEntradaTarde + config.tolerancia
+
+    if (horaCompleta > limiteTarde) {
+      return { 
+        esTardanza: true, 
+        mensaje: `Tardanza en horario de tarde. Límite: ${config.entradaTarde} + ${config.tolerancia}min` 
+      }
+    }
+  }
+
+  return { 
+    esTardanza: false, 
+    mensaje: `A tiempo. Horario: ${config.entradaManana} - ${config.salidaManana}${config.entradaTarde ? ` / ${config.entradaTarde} - ${config.salidaTarde}` : ''}` 
+  }
+}
+
+// Determinar si es falta (más de 1 hora de tardanza)
+const determinarFalta = async (horaEntrada: Date, tipoHorario: string): Promise<boolean> => {
+  const config = await obtenerConfigHorario(tipoHorario)
   
-  // Convertir a minutos para comparación
-  const entradaMinutos = hora * 60 + minutos
-  const limiteMinutos = limite.hora * 60 + limite.minutos
-  
-  return entradaMinutos > limiteMinutos
+  const hora = horaEntrada.getHours()
+  const minutos = horaEntrada.getMinutes()
+  const horaCompleta = hora * 60 + minutos
+
+  // Convertir horarios de configuración a minutos
+  const [horaEntradaManana, minutoEntradaManana] = config.entradaManana.split(':').map(Number)
+  const limiteFaltaManana = horaEntradaManana * 60 + minutoEntradaManana + config.tolerancia + 60 // 1 hora después del límite
+
+  // Verificar falta en la mañana
+  if (horaCompleta > limiteFaltaManana) {
+    let limiteMaximoManana = 13 * 60 + 59 // 13:59 como máximo para mañana
+    
+    if (config.entradaTarde) {
+      const [horaEntradaTarde] = config.entradaTarde.split(':').map(Number)
+      limiteMaximoManana = horaEntradaTarde * 60 - 1
+    }
+
+    if (horaCompleta <= limiteMaximoManana) {
+      return true
+    }
+  }
+
+  // Verificar falta en la tarde
+  if (config.entradaTarde) {
+    const [horaEntradaTarde, minutoEntradaTarde] = config.entradaTarde.split(':').map(Number)
+    const limiteFaltaTarde = horaEntradaTarde * 60 + minutoEntradaTarde + config.tolerancia + 60
+
+    if (horaCompleta > limiteFaltaTarde) {
+      return true
+    }
+  }
+
+  return false
 }
 
 // Marcar entrada
@@ -120,11 +217,19 @@ router.post('/entrada', authenticate, upload.single('foto'), async (req: express
       return res.status(400).json({ message: 'Ya registró entrada hoy' })
     }
 
-    // Determinar si es tardanza basado en el tipo de horario
+    // Determinar estado basado en el horario
     const ahora = new Date()
     const horaEntrada = ahora.toTimeString().split(' ')[0]
     
-    const esTardanza = determinarTardanza(ahora, empleado.tipoHorario || 'administrativo')
+    const { esTardanza, mensaje } = await determinarTardanza(ahora, empleado.tipoHorario)
+    const esFalta = await determinarFalta(ahora, empleado.tipoHorario)
+
+    let estado = 'presente'
+    if (esFalta) {
+      estado = 'falta'
+    } else if (esTardanza) {
+      estado = 'tardanza'
+    }
 
     const asistencia = await prisma.asistencia.create({
       data: {
@@ -133,10 +238,13 @@ router.post('/entrada', authenticate, upload.single('foto'), async (req: express
         horaEntrada: horaEntrada,
         fotoEntrada: foto,
         tardanza: esTardanza,
-        faltante: false,
-        estado: esTardanza ? 'tardanza' : 'presente'
+        faltante: esFalta,
+        estado: estado
       }
     })
+
+    // Obtener configuración para mostrar en respuesta
+    const configHorario = await obtenerConfigHorario(empleado.tipoHorario)
 
     res.json({ 
       message: 'Asistencia registrada correctamente', 
@@ -146,6 +254,10 @@ router.post('/entrada', authenticate, upload.single('foto'), async (req: express
           nombre: empleado.nombre,
           apellido: empleado.apellido,
           tipoHorario: empleado.tipoHorario
+        },
+        detalleHorario: {
+          configuracion: configHorario,
+          mensaje: mensaje
         }
       }
     })
